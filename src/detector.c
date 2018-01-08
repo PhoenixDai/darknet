@@ -399,7 +399,7 @@ void validate_detector_recall(char *datacfg, char *cfgfile, char *weightfile)
     int m = plist->size;
     int i=0;
 
-	float thresh = .001;// .001;	// .2;
+	float thresh = .2;// .001;
     float iou_thresh = .5;
     float nms = .4;
 
@@ -498,6 +498,15 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         get_region_boxes(l, 1, 1, thresh, probs, boxes, 0, 0);
         if (nms) do_nms_sort(boxes, probs, l.w*l.h*l.n, l.classes, nms);
         draw_detections(im, l.w*l.h*l.n, thresh, boxes, probs, names, alphabet, l.classes);
+
+		FILE * fp = fopen("pred_output.txt", "w+");
+		for (j = 0; j < l.w*l.h*l.n; ++j) {
+			int class_id = max_index(probs[j], l.classes);
+			float prob = probs[j][class_id];
+			fprintf(fp, "%d %.3f %f %f %f %f \n", class_id, prob, boxes[j].x, boxes[j].y, boxes[j].h, boxes[j].w);
+		}
+		fclose(fp);
+
         save_image(im, "predictions");
         show_image(im, "predictions");
 
@@ -511,6 +520,87 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 #endif
         if (filename) break;
     }
+}
+
+void test_detector_batch(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh)
+{
+	list *options = read_data_cfg(datacfg);
+	char *name_list = option_find_str(options, "names", "data/names.list");
+	char **names = get_labels(name_list);
+
+	image **alphabet = load_alphabet();
+	network net = parse_network_cfg_custom(cfgfile, 1);
+	if (weightfile) {
+		load_weights(&net, weightfile);
+	}
+	set_batch_network(&net, 1);
+	srand(2222222);
+	clock_t time;
+	char buff[256];
+	char *input = buff;
+	int j;
+	float nms = .4;
+
+	FILE * fp = fopen(filename, "r");
+	if (fp == NULL)
+		exit(EXIT_FAILURE);
+	// char * image_path = fgetl(fp);
+	char * line = fgetl(fp);
+	while (line) {
+		printf("Retrieved line of length %zu : ", strlen(line));
+		int image_name_len = strchr(line, '.') - line;
+		char * image_name = malloc(image_name_len);
+		strncpy(image_name, line, image_name_len);
+		image_name[image_name_len] = '\0';
+		printf("%s\n", image_name);
+
+		strncpy(input, line, 256);
+		if (input[strlen(input) - 1] == 0x0d) input[strlen(input) - 1] = 0;
+
+		image im = load_image_color(input, 0, 0);
+		image sized = resize_image(im, net.w, net.h);
+		layer l = net.layers[net.n - 1];
+
+		box *boxes = calloc(l.w*l.h*l.n, sizeof(box));
+		float **probs = calloc(l.w*l.h*l.n, sizeof(float *));
+		for (j = 0; j < l.w*l.h*l.n; ++j) probs[j] = calloc(l.classes, sizeof(float *));
+
+		float *X = sized.data;
+		time = clock();
+		network_predict(net, X);
+		float time_elapsed = sec(clock() - time);
+		printf("%s: Predicted in %f seconds.\n", input, time_elapsed);
+		get_region_boxes(l, 1, 1, 0.2, probs, boxes, 0, 0);
+		if (nms) do_nms_sort(boxes, probs, l.w*l.h*l.n, l.classes, nms);
+		draw_detections(im, l.w*l.h*l.n, 0.2, boxes, probs, names, alphabet, l.classes);
+
+		char * out_suffix = ".txt";
+		char * image_out = malloc(image_name_len);
+		strcpy(image_out, image_name);
+		strcat(image_out, out_suffix);
+		FILE * fp_out = fopen(image_out, "w+");
+		fprintf(fp_out, "%.3 f\n", time_elapsed);
+		for (j = 0; j < l.w*l.h*l.n; ++j) {
+			int class_id = max_index(probs[j], l.classes);
+			float prob = probs[j][class_id];
+			fprintf(fp_out, "%d %.3f %f %f %f %f \n", class_id, prob, boxes[j].x, boxes[j].y, boxes[j].h, boxes[j].w);
+		}
+		fclose(fp_out);
+
+		char * out_pred = "_pred";
+		strcat(image_name, out_pred);
+		save_image(im, image_name);
+
+		free_image(im);
+		free_image(sized);
+		free(boxes);
+		free_ptrs((void **)probs, l.w*l.h*l.n);
+
+		line = fgetl(fp);
+	}
+	fclose(fp);
+	if (line)
+		free(line);
 }
 
 void run_detector(int argc, char **argv)

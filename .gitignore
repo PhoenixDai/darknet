@@ -22,3 +22,14 @@ ehthumbs.db
 Icon?
 Thumbs.db
 *.swp
+build/src/activation_kernels.cu.deps
+build/src/avgpool_layer_kernels.cu.deps
+build/src/blas_kernels.cu.deps
+build/src/col2im_kernels.cu.deps
+build/src/convolutional_kernels.cu.deps
+build/src/crop_layer_kernels.cu.deps
+build/src/deconvolutional_kernels.cu.deps
+build/src/dropout_layer_kernels.cu.deps
+build/src/im2col_kernels.cu.deps
+build/src/maxpool_layer_kernels.cu.deps
+build/src/network_kernels.cu.deps
